@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -15,6 +16,7 @@ var (
 	repository  string
 	project     string
 	nameregex   string
+	account     string
 
 	keep = -1
 )
@@ -39,6 +41,11 @@ func main() {
 	clean.Flag("keep", "Keep the latest N tags").Short('k').IntVar(&keep)
 	clean.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
 
+	cleanall := app.Command("cleanall", "Cleanup tags in all projects of a user/group.")
+	cleanall.Arg("account", "Name of Gitlab user or group").StringVar(&account)
+	cleanall.Flag("keep", "Keep the latest N tags").Short('k').IntVar(&keep)
+	cleanall.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
+
 	operation := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	c := new(Client)
@@ -50,7 +57,7 @@ func main() {
 		if strings.HasPrefix(objtype, "repo") {
 			repos, err := c.GetRegistriesByProject(project)
 			if err != nil {
-				fmt.Println(err)
+				log.Fatal(err)
 			}
 			for _, r := range repos {
 				fmt.Printf("%s %s\n", project, r.Name)
@@ -60,7 +67,7 @@ func main() {
 		if objtype == "tags" {
 			tags, err := c.GetRegistriesTagsByProject(project, repository)
 			if err != nil {
-				fmt.Println(err)
+				log.Fatal(err)
 			}
 			for _, t := range tags {
 				fmt.Printf("%s\n", t.Location)
@@ -71,11 +78,15 @@ func main() {
 	case "clean":
 		resp, err := c.CleanUpRepositoryTags(project, repository)
 		if err != nil {
-			fmt.Println(err)
-			break
+			log.Fatal(err)
 		}
 		fmt.Println(resp.StatusCode)
 
+	case "cleanall":
+		err := c.CleanAllProjectRegistries(account)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 }
@@ -100,21 +111,68 @@ func (c *Client) CleanUpRepositoryTags(project, name string) (*gitlab.Response, 
 	}
 
 	for _, r := range repos {
-		fmt.Printf("Checking matching name: %s <==> %s\n", r.Name, name)
-		fmt.Printf("repo: %#v\n", r.Name)
 		if r.Name == name {
-			resp, err := c.Client.ContainerRegistry.DeleteRegistryRepositoryTags(project, r.ID, &opt)
-			if err != nil {
-				return nil, err
-			}
-			return resp, nil
+			return c.Client.ContainerRegistry.DeleteRegistryRepositoryTags(project, r.ID, &opt)
 		}
 	}
 	return nil, fmt.Errorf("nothing found to delete.")
 }
 
+func (c *Client) CleanAllProjectRegistries(account string) error {
+	opt := gitlab.ListGroupProjectsOptions{
+		ListOptions: gitlab.ListOptions{
+			PerPage: 100,
+			Page:    1,
+		},
+	}
+
+	for {
+		// Get the first page with projects.
+		projects, resp, err := c.Client.Groups.ListGroupProjects(account, &opt)
+		if err != nil {
+			return err
+		}
+
+		var delResponse *gitlab.Response
+		for _, p := range projects {
+			repos, err := c.GetRegistriesByProject(p.PathWithNamespace)
+			if err != nil {
+				return err
+			}
+
+			for _, r := range repos {
+				parts := strings.Split(r.Path, "/")
+				if len(parts) == 2 {
+					delResponse, err = c.CleanUpRepositoryTags(parts[0]+"/"+parts[1], "")
+				} else if len(parts) == 3 {
+					delResponse, err = c.CleanUpRepositoryTags(parts[0]+"/"+parts[1], parts[2])
+				} else {
+					return fmt.Errorf("malformed path: %s", r.Path)
+				}
+
+				if err != nil {
+					log.Println(delResponse.StatusCode, err)
+				} else {
+					log.Println(delResponse.StatusCode)
+				}
+			}
+		}
+
+		// Exit the loop when we've seen all pages.
+		if resp.CurrentPage >= resp.TotalPages {
+			break
+		}
+
+		// Update the page number to get the next page.
+		opt.Page = resp.NextPage
+
+	}
+
+	return nil
+}
+
 func (c *Client) GetRegistriesTagsByProject(project, name string) ([]*gitlab.RegistryRepositoryTag, error) {
-	//denic-id/c2id-auth-endpoint/dns-lookup-ms
+
 	repos, err := c.GetRegistriesByProject(project)
 	if err != nil {
 		return nil, err
