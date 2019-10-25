@@ -10,9 +10,6 @@ import (
 )
 
 var (
-	gitcommit   string
-	appversion  string
-	buildtime   string
 	gitlabtoken string
 	objtype     string
 	repository  string
@@ -43,7 +40,7 @@ func main() {
 	clean.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
 
 	operation := kingpin.MustParse(app.Parse(os.Args[1:]))
-	//"QQnBi5zumzg3sm-j1u_k"
+
 	c := new(Client)
 	c.Client = gitlab.NewClient(nil, gitlabtoken)
 
@@ -138,9 +135,7 @@ func (c *Client) GetRegistriesTagsByProject(project, name string) ([]*gitlab.Reg
 				}
 
 				// List all the projects we've found so far.
-				for _, t := range tags {
-					rtags = append(rtags, t)
-				}
+				rtags = append(rtags, tags...)
 
 				// Exit the loop when we've seen all pages.
 				if resp.CurrentPage >= resp.TotalPages {
@@ -173,9 +168,7 @@ func (c *Client) GetRegistriesByProject(name string) ([]*gitlab.RegistryReposito
 		}
 
 		// List all the projects we've found so far.
-		for _, r := range repos {
-			rrepos = append(rrepos, r)
-		}
+		rrepos = append(rrepos, repos...)
 
 		// Exit the loop when we've seen all pages.
 		if resp.CurrentPage >= resp.TotalPages {
