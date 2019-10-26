@@ -46,6 +46,9 @@ func main() {
 	cleanall.Flag("keep", "Keep the latest N tags").Short('k').IntVar(&keep)
 	cleanall.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
 
+	runners := app.Command("purge-runners", "Remove offline Gitlab Runners from user/group")
+	runners.Arg("account", "Name of Gitlab user or group").StringVar(&account)
+
 	operation := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	c := new(Client)
@@ -72,7 +75,6 @@ func main() {
 			for _, t := range tags {
 				fmt.Printf("%s\n", t.Location)
 			}
-
 		}
 
 	case "clean":
@@ -87,8 +89,13 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-	}
 
+	case "purge-runners":
+		err := c.PurgeRunners(account)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }
 
 func (c *Client) CleanUpRepositoryTags(project, name string) (*gitlab.Response, error) {
@@ -115,6 +122,7 @@ func (c *Client) CleanUpRepositoryTags(project, name string) (*gitlab.Response, 
 			return c.Client.ContainerRegistry.DeleteRegistryRepositoryTags(project, r.ID, &opt)
 		}
 	}
+
 	return nil, fmt.Errorf("nothing found to delete.")
 }
 
@@ -177,6 +185,7 @@ func (c *Client) GetRegistriesTagsByProject(project, name string) ([]*gitlab.Reg
 	if err != nil {
 		return nil, err
 	}
+
 	for _, r := range repos {
 		if r.Name == name {
 			opt := gitlab.ListRegistryRepositoryTagsOptions{
@@ -203,8 +212,8 @@ func (c *Client) GetRegistriesTagsByProject(project, name string) ([]*gitlab.Reg
 				// Update the page number to get the next page.
 				opt.Page = resp.NextPage
 			}
-			return rtags, err
 
+			return rtags, err
 		}
 	}
 
@@ -237,5 +246,33 @@ func (c *Client) GetRegistriesByProject(name string) ([]*gitlab.RegistryReposito
 		opt.Page = resp.NextPage
 	}
 	return rrepos, err
+}
 
+func (c *Client) PurgeRunners(account string) error {
+	statusfilter := "offline"
+	opt := gitlab.ListRunnersOptions{
+		Scope: &statusfilter,
+	}
+
+	runners, _, err := c.Client.Runners.ListRunners(&opt)
+	if err != nil {
+		return err
+	}
+
+	if len(runners) == 0 {
+		fmt.Println("no offline runners found")
+		return nil
+	}
+
+	for _, runner := range runners {
+		delResponse, err := c.Client.Runners.RemoveRunner(runner.ID)
+
+		if err != nil {
+			log.Println(delResponse.StatusCode, "runnerID", runner.ID, err)
+		} else {
+			log.Println(delResponse.StatusCode, "runnerID", runner.ID)
+		}
+	}
+
+	return nil
 }
