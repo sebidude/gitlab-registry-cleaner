@@ -3,16 +3,14 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
-	"github.com/alecthomas/kingpin"
 	gitlab "github.com/xanzy/go-gitlab"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
 	gitlabtoken string
-	objtype     string
 	repository  string
 	project     string
 	nameregex   string
@@ -27,71 +25,86 @@ type Client struct {
 
 func main() {
 
-	app := kingpin.New(os.Args[0], "gitlab registry cleaner")
-	app.Flag("token", "Gitlab access token").Short('t').Envar("GITLAB_TOKEN").StringVar(&gitlabtoken)
+	kingpin.Flag("token", "Gitlab access token").Short('t').Envar("GITLAB_TOKEN").StringVar(&gitlabtoken)
 
-	show := app.Command("show", "repos of group.")
-	show.Arg("object", "What to show").Default("repo").StringVar(&objtype)
-	show.Arg("project", "Project Name (user/project or group/project)").Default("-").StringVar(&project)
-	show.Arg("repository", "Name of the repository").StringVar(&repository)
+	show := kingpin.Command("show", "Show objects")
+	clean := kingpin.Command("clean", "Cleanup objects")
 
-	clean := app.Command("clean", "Cleanup tags from repository.")
-	clean.Arg("project", "Project Name (user/project or group/project)").Default("-").StringVar(&project)
-	clean.Arg("repository", "The repository to operate on.").Default("").StringVar(&repository)
-	clean.Flag("keep", "Keep the latest N tags").Short('k').IntVar(&keep)
-	clean.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
+	showRepo := show.Command("repos", "Show repos of project")
+	showRepo.Arg("project", "Project Name (user/project or group/project)").Required().StringVar(&project)
 
-	cleanall := app.Command("cleanall", "Cleanup tags in all projects of a user/group.")
-	cleanall.Arg("account", "Name of Gitlab user or group").StringVar(&account)
-	cleanall.Flag("keep", "Keep the latest N tags").Short('k').IntVar(&keep)
-	cleanall.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
+	showTags := show.Command("tags", "Show tags in repository")
+	showTags.Arg("project", "Project Name (user/project or group/project)").Required().StringVar(&project)
+	showTags.Arg("repository", "Name of the repository").Default("").StringVar(&repository)
 
-	operation := kingpin.MustParse(app.Parse(os.Args[1:]))
+	cleanRepo := clean.Command("repo", "Cleanup tags in a repository")
+	cleanRepo.Arg("project", "Project Name (user/project or group/project)").Required().StringVar(&project)
+	cleanRepo.Arg("repository", "Name of the repository").Default("").StringVar(&repository)
+	cleanRepo.Flag("keep", "Keep the latest N tags").Short('k').IntVar(&keep)
+	cleanRepo.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
+
+	cleanAllRepos := clean.Command("all", "Cleanup tags in all projects of a user/group")
+	cleanAllRepos.Arg("account", "Name of user or group").Required().StringVar(&account)
+	cleanAllRepos.Flag("keep", "Keep the latest N tags").Short('k').IntVar(&keep)
+	cleanAllRepos.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
+
+	showRunners := show.Command("runners", "Show offline group-runners")
+	cleanRunners := clean.Command("runners", "Delete offline group-runners")
+
+	operation := kingpin.Parse()
 
 	c := new(Client)
 	c.Client = gitlab.NewClient(nil, gitlabtoken)
 
 	switch operation {
-	case "show":
-
-		if strings.HasPrefix(objtype, "repo") {
-			repos, err := c.GetRegistriesByProject(project)
-			if err != nil {
-				log.Fatal(err)
-			}
-			for _, r := range repos {
-				fmt.Printf("%s %s\n", project, r.Name)
-			}
-		}
-
-		if objtype == "tags" {
-			tags, err := c.GetRegistriesTagsByProject(project, repository)
-			if err != nil {
-				log.Fatal(err)
-			}
-			for _, t := range tags {
-				fmt.Printf("%s\n", t.Location)
-			}
-
-		}
-
-	case "clean":
-		resp, err := c.CleanUpRepositoryTags(project, repository)
+	case showRepo.FullCommand():
+		repos, err := c.GetRegistriesByProject(project)
 		if err != nil {
-			log.Fatalln(resp.StatusCode, project, repository, err)
+			log.Fatal(err)
 		}
-		fmt.Println(resp.StatusCode, project, repository)
+		for _, r := range repos {
+			fmt.Printf("%s %s\n", project, r.Name)
+		}
 
-	case "cleanall":
-		err := c.CleanAllProjectRegistries(account)
+	case showTags.FullCommand():
+		tags, err := c.GetRegistriesTagsByProject(project, repository)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, t := range tags {
+			fmt.Printf("%s\n", t.Location)
+		}
+
+	case showRunners.FullCommand():
+		runners, err := c.GetRunners(account)
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, r := range runners {
+			fmt.Printf("runner id %d is %s\n", r.ID, r.Status)
+		}
+
+	case cleanRepo.FullCommand():
+		err := c.CleanUpRepositoryTags(project, repository)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+	case cleanAllRepos.FullCommand():
+		err := c.CleanUpAllProjectRegistries(account)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+	case cleanRunners.FullCommand():
+		err := c.CleanUpRunners()
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
-
 }
 
-func (c *Client) CleanUpRepositoryTags(project, name string) (*gitlab.Response, error) {
+func (c *Client) CleanUpRepositoryTags(project, name string) error {
 
 	opt := gitlab.DeleteRegistryRepositoryTagsOptions{}
 	opt.NameRegexp = &nameregex
@@ -107,18 +120,25 @@ func (c *Client) CleanUpRepositoryTags(project, name string) (*gitlab.Response, 
 
 	repos, err := c.GetRegistriesByProject(project)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	for _, r := range repos {
 		if r.Name == name {
-			return c.Client.ContainerRegistry.DeleteRegistryRepositoryTags(project, r.ID, &opt)
+			resp, err := c.Client.ContainerRegistry.DeleteRegistryRepositoryTags(project, r.ID, &opt)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			fmt.Println(resp.StatusCode, project, r.Name)
+			return nil
 		}
 	}
-	return nil, fmt.Errorf("nothing found to delete.")
+
+	return fmt.Errorf("nothing found to delete.")
 }
 
-func (c *Client) CleanAllProjectRegistries(account string) error {
+func (c *Client) CleanUpAllProjectRegistries(account string) error {
 	opt := gitlab.ListGroupProjectsOptions{
 		ListOptions: gitlab.ListOptions{
 			PerPage: 100,
@@ -133,7 +153,6 @@ func (c *Client) CleanAllProjectRegistries(account string) error {
 			return err
 		}
 
-		var delResponse *gitlab.Response
 		for _, p := range projects {
 			repos, err := c.GetRegistriesByProject(p.PathWithNamespace)
 			if err != nil {
@@ -148,12 +167,10 @@ func (c *Client) CleanAllProjectRegistries(account string) error {
 					subrepo = parts[2]
 				}
 
-				delResponse, err = c.CleanUpRepositoryTags(p.PathWithNamespace, subrepo)
+				err = c.CleanUpRepositoryTags(p.PathWithNamespace, subrepo)
 
 				if err != nil {
-					log.Println(delResponse.StatusCode, p.PathWithNamespace, subrepo, err)
-				} else {
-					log.Println(delResponse.StatusCode, p.PathWithNamespace, subrepo)
+					return err
 				}
 			}
 		}
@@ -177,6 +194,7 @@ func (c *Client) GetRegistriesTagsByProject(project, name string) ([]*gitlab.Reg
 	if err != nil {
 		return nil, err
 	}
+
 	for _, r := range repos {
 		if r.Name == name {
 			opt := gitlab.ListRegistryRepositoryTagsOptions{
@@ -203,12 +221,12 @@ func (c *Client) GetRegistriesTagsByProject(project, name string) ([]*gitlab.Reg
 				// Update the page number to get the next page.
 				opt.Page = resp.NextPage
 			}
-			return rtags, err
 
+			return rtags, err
 		}
 	}
 
-	return nil, fmt.Errorf("nothing to list")
+	return nil, fmt.Errorf("nothing to list - maybe you need to specify the repository name? Check with 'show repos'.")
 }
 
 func (c *Client) GetRegistriesByProject(name string) ([]*gitlab.RegistryRepository, error) {
@@ -237,5 +255,48 @@ func (c *Client) GetRegistriesByProject(name string) ([]*gitlab.RegistryReposito
 		opt.Page = resp.NextPage
 	}
 	return rrepos, err
+}
 
+func (c *Client) GetRunners(account string) ([]*gitlab.Runner, error) {
+	opt := gitlab.ListRunnersOptions{}
+	runners, _, err := c.Client.Runners.ListRunners(&opt)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(runners) == 0 {
+		fmt.Println("no runners found")
+		return nil, nil
+	}
+
+	return runners, nil
+}
+
+func (c *Client) CleanUpRunners() error {
+	statusfilter := "offline"
+	opt := gitlab.ListRunnersOptions{
+		Scope: &statusfilter,
+	}
+
+	runners, _, err := c.Client.Runners.ListRunners(&opt)
+	if err != nil {
+		return err
+	}
+
+	if len(runners) == 0 {
+		fmt.Println("no offline runners found")
+		return nil
+	}
+
+	for _, runner := range runners {
+		delResponse, err := c.Client.Runners.RemoveRunner(runner.ID)
+
+		if err != nil {
+			fmt.Printf("%d deleting runner with id %d failed: %s\n", delResponse.StatusCode, runner.ID, err)
+		} else {
+			fmt.Printf("%d runner with id %d deleted\n", delResponse.StatusCode, runner.ID)
+		}
+	}
+
+	return nil
 }
