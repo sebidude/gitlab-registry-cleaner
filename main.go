@@ -78,9 +78,9 @@ func main() {
 	case "clean":
 		resp, err := c.CleanUpRepositoryTags(project, repository)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalln(resp.StatusCode, project, repository, err)
 		}
-		fmt.Println(resp.StatusCode)
+		fmt.Println(resp.StatusCode, project, repository)
 
 	case "cleanall":
 		err := c.CleanAllProjectRegistries(account)
@@ -142,18 +142,21 @@ func (c *Client) CleanAllProjectRegistries(account string) error {
 
 			for _, r := range repos {
 				parts := strings.Split(r.Path, "/")
+				subrepo := ""
+
 				if len(parts) == 2 {
-					delResponse, err = c.CleanUpRepositoryTags(parts[0]+"/"+parts[1], "")
+					delResponse, err = c.CleanUpRepositoryTags(p.PathWithNamespace, "")
 				} else if len(parts) == 3 {
-					delResponse, err = c.CleanUpRepositoryTags(parts[0]+"/"+parts[1], parts[2])
+					subrepo = parts[2]
+					delResponse, err = c.CleanUpRepositoryTags(p.PathWithNamespace, subrepo)
 				} else {
 					return fmt.Errorf("malformed path: %s", r.Path)
 				}
 
 				if err != nil {
-					log.Println(delResponse.StatusCode, err)
+					log.Println(delResponse.StatusCode, p.PathWithNamespace, subrepo, err)
 				} else {
-					log.Println(delResponse.StatusCode)
+					log.Println(delResponse.StatusCode, p.PathWithNamespace, subrepo)
 				}
 			}
 		}
