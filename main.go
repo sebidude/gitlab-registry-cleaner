@@ -144,14 +144,11 @@ func (c *Client) CleanAllProjectRegistries(account string) error {
 				parts := strings.Split(r.Path, "/")
 				subrepo := ""
 
-				if len(parts) == 2 {
-					delResponse, err = c.CleanUpRepositoryTags(p.PathWithNamespace, "")
-				} else if len(parts) == 3 {
+				if len(parts) == 3 {
 					subrepo = parts[2]
-					delResponse, err = c.CleanUpRepositoryTags(p.PathWithNamespace, subrepo)
-				} else {
-					return fmt.Errorf("malformed path: %s", r.Path)
 				}
+
+				delResponse, err = c.CleanUpRepositoryTags(p.PathWithNamespace, subrepo)
 
 				if err != nil {
 					log.Println(delResponse.StatusCode, p.PathWithNamespace, subrepo, err)
