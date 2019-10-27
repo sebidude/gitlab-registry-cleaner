@@ -28,30 +28,29 @@ func main() {
 	kingpin.Flag("token", "Gitlab access token").Short('t').Envar("GITLAB_TOKEN").StringVar(&gitlabtoken)
 
 	show := kingpin.Command("show", "Show objects")
-	clean := kingpin.Command("clean", "Cleanup objects")
-	auto := kingpin.Command("auto", "Automatable mode (clean all repos + offline runners)")
-	auto.Arg("account", "Name of user or group").Required().StringVar(&account)
-
 	showRepo := show.Command("repos", "Show repos of project")
 	showRepo.Arg("project", "Project Name (user/project or group/project)").Required().StringVar(&project)
-
 	showTags := show.Command("tags", "Show tags in repository")
 	showTags.Arg("project", "Project Name (user/project or group/project)").Required().StringVar(&project)
 	showTags.Arg("repository", "Name of the repository").Default("").StringVar(&repository)
+	showRunners := show.Command("runners", "Show offline group-runners")
 
+	clean := kingpin.Command("clean", "Cleanup objects")
 	cleanRepo := clean.Command("repo", "Cleanup tags in a repository")
 	cleanRepo.Arg("project", "Project Name (user/project or group/project)").Required().StringVar(&project)
 	cleanRepo.Arg("repository", "Name of the repository").Default("").StringVar(&repository)
 	cleanRepo.Flag("keep", "Keep the latest N tags").Short('k').IntVar(&keep)
 	cleanRepo.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
-
 	cleanAllRepos := clean.Command("all", "Cleanup tags in all projects of a user/group")
 	cleanAllRepos.Arg("account", "Name of user or group").Required().StringVar(&account)
 	cleanAllRepos.Flag("keep", "Keep the latest N tags").Short('k').IntVar(&keep)
 	cleanAllRepos.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
-
-	showRunners := show.Command("runners", "Show offline group-runners")
 	cleanRunners := clean.Command("runners", "Delete offline group-runners")
+
+	auto := kingpin.Command("auto", "Automatable mode (clean all + clean runners)")
+	auto.Arg("account", "Name of user or group").Required().StringVar(&account)
+	auto.Flag("keep", "Keep the latest N tags").Short('k').IntVar(&keep)
+	auto.Flag("nameregex", "Regex of the tag names to be cleaned up.").Default(".*").Short('n').StringVar(&nameregex)
 
 	operation := kingpin.Parse()
 
