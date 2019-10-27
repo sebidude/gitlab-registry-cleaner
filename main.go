@@ -29,6 +29,8 @@ func main() {
 
 	show := kingpin.Command("show", "Show objects")
 	clean := kingpin.Command("clean", "Cleanup objects")
+	auto := kingpin.Command("auto", "Automatable mode (clean all repos + offline runners)")
+	auto.Arg("account", "Name of user or group").Required().StringVar(&account)
 
 	showRepo := show.Command("repos", "Show repos of project")
 	showRepo.Arg("project", "Project Name (user/project or group/project)").Required().StringVar(&project)
@@ -98,6 +100,16 @@ func main() {
 
 	case cleanRunners.FullCommand():
 		err := c.CleanUpRunners()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+	case auto.FullCommand():
+		err := c.CleanUpAllProjectRegistries(account)
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = c.CleanUpRunners()
 		if err != nil {
 			log.Fatal(err)
 		}
