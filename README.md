@@ -1,8 +1,11 @@
+# gitlab-registry-cleaner
+
 ```
 usage: gitlab-registry-cleaner [<flags>] <command> [<args> ...]
 
 Flags:
-      --help         Show context-sensitive help (also try --help-long and --help-man).
+      --help         Show context-sensitive help (also try --help-long and
+                     --help-man).
   -t, --token=TOKEN  Gitlab access token
 
 Commands:
@@ -26,4 +29,7 @@ Commands:
 
   clean runners
     Delete offline group-runners
+
+  auto [<flags>] <account>
+    Automatable mode (clean all + clean runners)
 ```
