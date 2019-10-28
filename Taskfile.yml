@@ -1,0 +1,11 @@
+version: '2'
+
+tasks:
+  default:
+    cmds:
+      - go install
+      - go build -o build/gitlab-registry-cleaner
+      - docker build -t deniceg/gitlab-registry-cleaner .
+      - docker push deniceg/gitlab-registry-cleaner
+    env:
+      CGO_ENABLED: 0
