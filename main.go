@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"log"
 	"strings"
 
@@ -64,7 +64,7 @@ func main() {
 			log.Fatal(err)
 		}
 		for _, r := range repos {
-			fmt.Printf("%s %s\n", project, r.Name)
+			log.Printf("%s %s\n", project, r.Name)
 		}
 
 	case showTags.FullCommand():
@@ -73,7 +73,7 @@ func main() {
 			log.Fatal(err)
 		}
 		for _, t := range tags {
-			fmt.Printf("%s\n", t.Location)
+			log.Printf("%s\n", t.Location)
 		}
 
 	case showRunners.FullCommand():
@@ -82,7 +82,7 @@ func main() {
 			log.Fatal(err)
 		}
 		for _, r := range runners {
-			fmt.Printf("runner id %d is %s\n", r.ID, r.Status)
+			log.Printf("runner id %d is %s\n", r.ID, r.Status)
 		}
 
 	case cleanRepo.FullCommand():
@@ -138,15 +138,15 @@ func (c *Client) CleanUpRepositoryTags(project, name string) error {
 		if r.Name == name {
 			resp, err := c.Client.ContainerRegistry.DeleteRegistryRepositoryTags(project, r.ID, &opt)
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 			}
 
-			fmt.Println(resp.StatusCode, project, r.Name)
+			log.Println(resp.StatusCode, project, r.Name)
 			return nil
 		}
 	}
 
-	return fmt.Errorf("nothing found to delete.")
+	return errors.New("nothing found to delete.")
 }
 
 func (c *Client) CleanUpAllProjectRegistries(account string) error {
@@ -237,7 +237,7 @@ func (c *Client) GetRegistriesTagsByProject(project, name string) ([]*gitlab.Reg
 		}
 	}
 
-	return nil, fmt.Errorf("nothing to list - maybe you need to specify the repository name? Check with 'show repos'.")
+	return nil, errors.New("nothing to list - maybe you need to specify the repository name? Check with 'show repos'.")
 }
 
 func (c *Client) GetRegistriesByProject(name string) ([]*gitlab.RegistryRepository, error) {
@@ -276,7 +276,7 @@ func (c *Client) GetRunners(account string) ([]*gitlab.Runner, error) {
 	}
 
 	if len(runners) == 0 {
-		fmt.Println("no runners found")
+		log.Println("no runners found")
 		return nil, nil
 	}
 
@@ -295,7 +295,7 @@ func (c *Client) CleanUpRunners() error {
 	}
 
 	if len(runners) == 0 {
-		fmt.Println("no offline runners found")
+		log.Println("no offline runners found")
 		return nil
 	}
 
@@ -303,9 +303,9 @@ func (c *Client) CleanUpRunners() error {
 		delResponse, err := c.Client.Runners.RemoveRunner(runner.ID)
 
 		if err != nil {
-			fmt.Printf("%d deleting runner with id %d failed: %s\n", delResponse.StatusCode, runner.ID, err)
+			log.Printf("%d deleting runner with id %d failed: %s\n", delResponse.StatusCode, runner.ID, err)
 		} else {
-			fmt.Printf("%d runner with id %d deleted\n", delResponse.StatusCode, runner.ID)
+			log.Printf("%d runner with id %d deleted\n", delResponse.StatusCode, runner.ID)
 		}
 	}
 
